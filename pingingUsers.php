@@ -42,7 +42,7 @@ function pingingusers_info() {
  */
 $plugins->add_hook('datahandler_post_insert_post_end', 'pinging_users_datahandler_post_insert_post');
 $plugins->add_hook('datahandler_post_insert_thread_end', 'pinging_users_datahandler_post_insert_thread_post');
-$plugins->add_hook('datahandler_post_update', 'pinging_users_datahandler_post_update');
+$plugins->add_hook('datahandler_post_update_end', 'pinging_users_datahandler_post_update');
 
 /**
  * Installing plugin - adding settings to database
