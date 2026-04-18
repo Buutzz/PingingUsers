@@ -175,48 +175,41 @@ function ping_user_send_dm($pingData) {
 
 function ping_users_handler($postData) {
     global $db, $mybb;
-
     $pingedUsers = [];
-    $maxlen = (int)$mybb->settings['maxnamelength'];
-
     $msg = str_replace(["\\r\\n", "\\n", "\\r"], "\n", $postData['msg']);
 
     $msg = preg_replace_callback(
-        '/\[url=.*?\].*?\[\/url\](*SKIP)(*F)|@([A-Za-z0-9\' ]{1,' . $maxlen . '})/u',
+        '/\[url=.*?\].*?\[\/url\](*SKIP)(*F)|(?<!\S)@([\p{L}\p{N}\'\x{2019}\\\.\-]+(?: [\p{L}\p{N}\'\x{2019}\\\.\-]+)*)/u',
         function($match) use ($db, $mybb, &$pingedUsers, $postData) {
-
             if (!isset($match[1])) return $match[0];
 
+            // Clean backslashes before apostrophes only for DB lookup
             $username = trim($match[1]);
+            $username = preg_replace('/\\\\(?=[\'\x{2019}])/u', '', $username);
+
             if ($username === '') return $match[0];
 
             $usernameEscaped = $db->escape_string($username);
-
             $query = $db->simple_select(
                 "users",
                 "uid, username",
                 "LOWER(username) = '" . strtolower($usernameEscaped) . "'"
             );
-
             $user = $db->fetch_array($query);
 
             if (!empty($user) && !in_array($user['uid'], $pingedUsers)) {
                 $pingedUsers[] = $user['uid'];
-
                 ping_user_send_dm([
                     'tid' => $postData['tid'],
                     'pid' => $postData['pid'],
                     'userId' => $user['uid'],
                 ]);
-
-                return '[url='.$mybb->settings['bburl'].'/member.php?action=profile&uid='.$user['uid'].']@'.$user['username'].'[/url]';
+                return $db->escape_string('[url='.$mybb->settings['bburl'].'/member.php?action=profile&uid='.$user['uid'].']@'.$user['username'].'[/url]');
             }
-
             return $match[0];
         },
         $msg
     );
-
     return $msg;
 }
 
