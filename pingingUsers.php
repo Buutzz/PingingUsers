@@ -7,7 +7,7 @@
  *
  * @package PingingUsers
  * @author ArButz
- * @version 1.0
+ * @version 1.2
  * @license GPL-3.0
  * @copyright Copyright 2026
  *
@@ -182,31 +182,45 @@ function ping_users_handler($postData) {
         '/\[url=.*?\].*?\[\/url\](*SKIP)(*F)|(?<!\S)@([\p{L}\p{N}\'\x{2019}\\\.\-]+(?: [\p{L}\p{N}\'\x{2019}\\\.\-]+)*)/u',
         function($match) use ($db, $mybb, &$pingedUsers, $postData) {
             if (!isset($match[1])) return $match[0];
-
+            
             // Clean backslashes before apostrophes only for DB lookup
-            $username = trim($match[1]);
-            $username = preg_replace('/\\\\(?=[\'\x{2019}])/u', '', $username);
+            $raw = trim($match[1]);
+            $raw = preg_replace('/\\\\(?=[\'\x{2019}])/u', '', $raw);
 
-            if ($username === '') return $match[0];
+            $words = preg_split('/\s+/', $raw);
+            $user = null;
+            $matchedUsername = '';
 
-            $usernameEscaped = $db->escape_string($username);
-            $query = $db->simple_select(
-                "users",
-                "uid, username",
-                "LOWER(username) = '" . strtolower($usernameEscaped) . "'"
-            );
-            $user = $db->fetch_array($query);
-
-            if (!empty($user) && !in_array($user['uid'], $pingedUsers)) {
-                $pingedUsers[] = $user['uid'];
-                ping_user_send_dm([
-                    'tid' => $postData['tid'],
-                    'pid' => $postData['pid'],
-                    'userId' => $user['uid'],
-                ]);
-                return $db->escape_string('[url='.$mybb->settings['bburl'].'/member.php?action=profile&uid='.$user['uid'].']@'.$user['username'].'[/url]');
+            for ($len = count($words); $len >= 1; $len--) {
+                $candidate = implode(' ', array_slice($words, 0, $len));
+                $escaped = $db->escape_string($candidate);
+                $query = $db->simple_select(
+                    "users",
+                    "uid, username",
+                    "LOWER(username) = '" . strtolower($escaped) . "'"
+                );
+                $found = $db->fetch_array($query);
+                if (!empty($found)) {
+                    $user = $found;
+                    $matchedUsername = $candidate;
+                    break;
+                }
             }
-            return $match[0];
+
+            if (!$user || in_array($user['uid'], $pingedUsers)) return $match[0];
+
+            $pingedUsers[] = $user['uid'];
+            ping_user_send_dm([
+                'tid' => $postData['tid'],
+                'pid' => $postData['pid'],
+                'userId' => $user['uid'],
+            ]);
+
+            $suffix = substr($raw, strlen($matchedUsername));
+            $profileUrl = $mybb->settings['bburl'] . '/member.php?action=profile&uid=' . $user['uid'];
+            $replacement = '[url=' . $profileUrl . ']@' . $user['username'] . '[/url]';
+            
+            return $replacement . ($suffix ? ' ' . $suffix : '');
         },
         $msg
     );
@@ -251,10 +265,12 @@ function pinging_users_datahandler_post_update(&$post) {
         'tid' => $post->data['tid'],
         'pid' => $post->data['pid'],
     ];
+
     $newMsg = ping_users_handler($postData);
     if ($newMsg !== $postData['msg']) {
         $db->update_query('posts', [ 'message' => $newMsg ], "pid='{$postData['pid']}'");
     }
+
     return $post;
 }
 
